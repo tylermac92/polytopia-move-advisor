@@ -1,0 +1,13 @@
+name: warrior_attacks_damaged_warrior_in_city
+build: "Android 2.17.3.16375"
+source: observed
+evidence: [shots/combat_04_before.jpg, shots/combat_04_after.jpg]
+setup:
+  attacker: { kind: warrior, hp: 10, vet: false, kills: 1 }
+  defender: { kind: warrior, hp: 8, vet: false, defense_bonus: city }
+  distance: 1
+action: attack
+expect:
+  attacker_hp: 5
+  defender_hp: 4
+notes: Game turn 10, same Poxisha defender as combat_03 (no walls). City bonus 1.5; damage 4.09 rounds to 4, retaliation 4.91 rounds to 5; retaliation uses defender's pre-attack HP. See ADR 0001.
