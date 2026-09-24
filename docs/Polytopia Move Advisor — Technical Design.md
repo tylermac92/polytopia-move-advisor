@@ -66,7 +66,13 @@ State is a flat, value-typed struct so it can be cloned cheaply thousands of tim
 ```go
 type TileIdx int16
 type PlayerID int8
-type UnitID int32 // assigned from 1; 0 means "no unit"
+type UnitID int32 // per owner, assigned from 1 by Player.NextUnitID; 0 means "no unit"
+
+// UnitRef identifies a unit game-wide: two players can own units with the same UnitID.
+type UnitRef struct {
+    Owner PlayerID
+    ID    UnitID
+}
 
 type GameState struct {
     RulesVersion string
@@ -91,7 +97,7 @@ type Tile struct {
 }
 
 type Unit struct {
-    ID              UnitID
+    ID              UnitID // unique only together with Owner; see UnitRef
     Kind            UnitKind
     Owner           PlayerID
     Pos             TileIdx
@@ -116,15 +122,17 @@ type City struct {
 }
 
 type Player struct {
-    ID    PlayerID
-    Tribe Tribe
-    Stars int
-    Techs TechSet // bitset; must stay a value type (integer or fixed array), never a slice
-    Alive bool
+    ID         PlayerID
+    Tribe      Tribe
+    Stars      int
+    Techs      TechSet // bitset; must stay a value type (integer or fixed array), never a slice
+    Alive      bool
+    NextUnitID UnitID  // ID this player's next trained unit gets; starts at 1; see Unit IDs
 }
 ```
 
-- **Actions** are a tagged struct (`Move`, `Attack`, `Train`, `Research`, `Harvest`, `Build`, `CaptureCity`, `CityUpgrade`, `EndTurn`) with fixed fields, so they hash and serialize cleanly. Actions reference units by `Unit.ID` or by tile, never by slice index, because dead units are removed from `Units` mid-plan and indexes shift. Search-only moves (`AdvancePhase`, `ReturnToPhase`, `DeferUnit`, see Search) never reach the engine.
+- **Unit IDs** are per player. Each `Player` has its own `NextUnitID` counter, starting at 1, and training a unit takes the owner's next ID. A unit is identified by its `UnitRef` (owner and ID), never by ID alone, since both players have a unit 1. A single global counter would leak hidden information: the gaps in a player's own unit IDs would show how many units the enemy trained in between. The counter lives in `GameState`, so `Clone` copies it with the rest of the player.
+- **Actions** are a tagged struct (`Move`, `Attack`, `Train`, `Research`, `Harvest`, `Build`, `CaptureCity`, `CityUpgrade`, `EndTurn`) with fixed fields, so they hash and serialize cleanly. Actions reference units by `UnitRef` or by tile, never by slice index, because dead units are removed from `Units` mid-plan and indexes shift. Search-only moves (`AdvancePhase`, `ReturnToPhase`, `DeferUnit`, see Search) never reach the engine.
 - **Cloning** copies the struct and then each slice with `make` + `copy`. A struct copy alone shares the slices' backing arrays, so a clone would mutate its parent. No maps or pointers in `GameState` keeps it allocation-light. If profiling in Phase 3 shows clone cost dominating search, switch to apply/undo or pooled buffers.
 
 ```go
@@ -261,7 +269,7 @@ type SeenCity struct {
 
 The view projector follows two rules. An enemy unit is copied into `SeenUnits` if it stands on a tile the player has explored, whether or not that tile is in current sight range. And every cross-reference into a true slice is remapped or stripped: seen units get view-local IDs assigned in tile order, own units' `HomeCity` is remapped into `MyCities`, and tiles carry no city index. An index into a filtered slice means something different from an index into the true one, a true city index can reveal a city the player hasn't discovered, and sequential unit IDs reveal how many units the enemy has trained.
 
-- **Determinization for search (MVP):** `search.Determinize` turns a `PlayerView` into a `GameState`. `MyCities` come first in `Cities`, so own units' `HomeCity` indexes stay valid, followed by `SeenCities` with unobservable fields at neutral defaults. Seen enemy units get IDs from a range disjoint from own unit IDs, with `Kills` 0, `HomeCity` -1 and move flags cleared. Unknown tiles become neutral fields with no resources or units. Crude, but safe and unbiased by hidden truth, and the same view always determinizes to the same state.
+- **Determinization for search (MVP):** `search.Determinize` turns a `PlayerView` into a `GameState`. `MyCities` come first in `Cities`, so own units' `HomeCity` indexes stay valid, followed by `SeenCities` with unobservable fields at neutral defaults. Seen enemy units keep their `Owner` and take their `ViewID` as ID. Their IDs cannot collide with own units because units are identified by owner and ID. Each opponent's `NextUnitID` is set one past its highest assigned ID, so units the enemy trains during search get fresh IDs. Seen enemy units get `Kills` 0, `HomeCity` -1 and move flags cleared. Unknown tiles become neutral fields with no resources or units. Crude, but safe and unbiased by hidden truth, and the same view always determinizes to the same state.
 - **Enforcement, primary: mutation test.** The test plans on a view with an iteration budget and fixed seed (so the output is deterministic, see Search), then mutates hidden parts of the *live* sandbox state in place: unexplored tiles, units on them, enemy stars and techs, and the unobservable fields of visible units and cities (true IDs, kill counts, home cities, move flags, city population and buildings). It re-plans and asserts the recommendation is unchanged. Mutating the live state, not a copy, means any side channel from the planner into the sandbox shows up as a changed plan.
 - **Enforcement, secondary: import test.** A `go list -deps` test asserts `internal/search`, `internal/eval` and `internal/explain` have no import path to `internal/sandbox`, `internal/view` or `internal/api`, and that `internal/api` imports no advisor package other than `internal/search`. This is weaker than it looks: the advisor legitimately imports `internal/state` to build determinized states, so the `GameState` type is available to it. The import test proves where a true `GameState` cannot come from, not that every `GameState` the advisor touches was built from a view; the mutation test covers that.
 
@@ -345,15 +353,15 @@ V(s) = \sum_i w_i \cdot c_i(s) \; - \; \lambda \cdot T(s)
 **Threat check T(s).** Threats are aggregated per attacker, so each enemy unit attacks at most once and focus fire is counted.
 
 1. For every seen enemy unit, compute the tiles it can attack next turn (move then attack, respecting zone of control) and the own units and cities in reach.
-2. Greedily assign attackers: repeatedly pick the (attacker, target) pair with the largest marginal expected loss given damage already assigned to that target, simulate the attack with `ResolveCombat` on a scratch copy, and remove that attacker. Attacks on the same target are applied in sequence, so damage stacks and a kill by the second attacker is counted. Ties break by `Unit.ID`. Stop when no pair has positive marginal loss.
+2. Greedily assign attackers: repeatedly pick the (attacker, target) pair with the largest marginal expected loss given damage already assigned to that target, simulate the attack with `ResolveCombat` on a scratch copy, and remove that attacker. Attacks on the same target are applied in sequence, so damage stacks and a kill by the second attacker is counted. Ties break by `UnitRef` (owner, then ID). Stop when no pair has positive marginal loss.
 3. A city capture threat counts whenever an enemy unit can reach the city tile next turn; the capture itself would happen on the enemy's following turn. The threat is discounted (factor in the weights config, starting value 0.5) if any own unit could kill the intruder with a single `ResolveCombat` call from that unit's current reach. This keeps the check one-ply: deciding whether the player's whole next turn could kill the intruder would put a second ply inside every leaf evaluation. Moving onto the city is one of the assignment options for an attacker, valued at the city's worth, so a unit can't both attack elsewhere and threaten the city.
 4. T(s) is the sum of the assigned expected losses. Each non-zero assignment is kept as a `Threat` for the explainer.
 
 ```go
 type Threat struct {
-    Attacker     state.UnitID
-    Target       state.UnitID // 0 when the target is a city
-    City         int16        // index into Cities; -1 for unit targets
+    Attacker     state.UnitRef
+    Target       state.UnitRef // zero UnitRef when the target is a city
+    City         int16         // index into Cities; -1 for unit targets
     ExpectedLoss float64
     Capture      bool
 }
