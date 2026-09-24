@@ -1,0 +1,13 @@
+name: warrior_attacks_warrior_no_bonus_full_hp_repeat
+build: "Android 2.17.3.16375"
+source: observed
+evidence: [shots/combat_05_before.jpg, shots/combat_05_after.jpg]
+setup:
+  attacker: { kind: warrior, hp: 10, vet: false }
+  defender: { kind: warrior, hp: 10, vet: false, defense_bonus: false }
+  distance: 1
+action: attack
+expect:
+  attacker_hp: 5
+  defender_hp: 5
+notes: Game turn 11. Repeat of combat_01; raw 4.5 both ways, rounds up. Defender possibly on forest with no shield (unconfirmed). See ADR 0001.
