@@ -1,0 +1,14 @@
+name: damaged_warrior_attacks_warrior_in_city_dies_to_retaliation
+build: "Android 2.17.3.16375"
+source: observed
+evidence: [shots/combat_03_before.jpg, shots/combat_03_after.jpg]
+setup:
+  attacker: { kind: warrior, hp: 5, vet: false, kills: 1 }
+  defender: { kind: warrior, hp: 10, vet: false, defense_bonus: city }
+  distance: 1
+action: attack
+expect:
+  attacker_hp: 0   # killed by retaliation
+  defender_hp: 8
+  defender_kills: +1
+notes: Game turn 10, defender in Poxisha (no walls). Damage 2.25 rounds to 2; retaliation 6.75 rounds to 7, exceeding the attacker's 5 HP. See ADR 0001.
