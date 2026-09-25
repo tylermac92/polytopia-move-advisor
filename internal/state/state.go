@@ -25,8 +25,8 @@ const NoUnit UnitID = 0
 // UnitRef identifies a unit across the whole game. Two players can own units
 // with the same UnitID, so actions and events refer to units by UnitRef.
 type UnitRef struct {
-	Owner PlayerID
-	ID    UnitID
+	Owner PlayerID `json:"owner"`
+	ID    UnitID   `json:"id"`
 }
 
 // Terrain is a tile's base terrain.
@@ -83,39 +83,44 @@ const (
 // is itself free of slices, maps and pointers, so copying each slice copies
 // the whole state. Units and cities refer to tiles and cities by index.
 type GameState struct {
-	RulesVersion string
-	Turn         int
-	Active       PlayerID
-	W, H         int
-	Tiles        []Tile
-	Units        []Unit // dense; dead units removed at end of action, so refer to units by UnitRef
-	Cities       []City // never removed (capture changes Owner), so indexes are stable
-	Players      []Player
-	RNGSeed      uint64 // sandbox only; engine itself is deterministic
+	RulesVersion string   `json:"rules_version"`
+	Turn         int      `json:"turn"`
+	Active       PlayerID `json:"active"`
+	W            int      `json:"w"`
+	H            int      `json:"h"`
+	Tiles        []Tile   `json:"tiles"`
+	Units        []Unit   `json:"units"`  // dense; dead units removed at end of action, so refer to units by UnitRef
+	Cities       []City   `json:"cities"` // never removed (capture changes Owner), so indexes are stable
+	Players      []Player `json:"players"`
+	// RNGSeed is sandbox only; the engine itself is deterministic. It is
+	// encoded as a JSON string because JavaScript numbers lose precision
+	// above 2^53.
+	RNGSeed uint64 `json:"rng_seed,string"`
 }
 
 // Tile is one map tile.
 type Tile struct {
-	Terrain  Terrain
-	Resource Resource
-	Building Building
-	Owner    PlayerID // NoPlayer if unclaimed
-	CityIdx  int16    // index into Cities; -1 if none
-	Road     bool
-	Explored uint8 // bitmask per player: bit p set when player p has explored the tile
+	Terrain  Terrain  `json:"terrain"`
+	Resource Resource `json:"resource"`
+	Building Building `json:"building"`
+	Owner    PlayerID `json:"owner"`    // NoPlayer if unclaimed
+	CityIdx  int16    `json:"city_idx"` // index into Cities; -1 if none
+	Road     bool     `json:"road"`
+	Explored uint8    `json:"explored"` // bitmask per player: bit p set when player p has explored the tile
 }
 
 // Unit is one unit on the map.
 type Unit struct {
-	ID              UnitID // unique only together with Owner; see UnitRef
-	Kind            UnitKind
-	Owner           PlayerID
-	Pos             TileIdx
-	HP              int16 // stored x10 to keep combat in integers
-	Kills           int8  // counts toward veterancy; threshold in rules file
-	Vet             bool
-	Moved, Attacked bool
-	HomeCity        int16 // index into Cities; stable because cities are never removed
+	ID       UnitID   `json:"id"` // unique only together with Owner; see UnitRef
+	Kind     UnitKind `json:"kind"`
+	Owner    PlayerID `json:"owner"`
+	Pos      TileIdx  `json:"pos"`
+	HP       int16    `json:"hp"`    // stored x10 to keep combat in integers
+	Kills    int8     `json:"kills"` // counts toward veterancy; threshold in rules file
+	Vet      bool     `json:"vet"`
+	Moved    bool     `json:"moved"`
+	Attacked bool     `json:"attacked"`
+	HomeCity int16    `json:"home_city"` // index into Cities; stable because cities are never removed
 }
 
 // Ref returns the unit's game-wide identity.
@@ -135,31 +140,31 @@ func (u *Unit) Ref() UnitRef { return UnitRef{Owner: u.Owner, ID: u.ID} }
 // sets PendingReward, so the engine never reaches a level whose rewards are
 // undefined (level 5+ rewards are out of MVP scope).
 type City struct {
-	Pos          TileIdx
-	Owner        PlayerID // NoPlayer for an unclaimed village
-	Level        int8     // 1..max_city_level from the rules file
-	Population   int8     // keeps growing at max_city_level, without further level-ups
-	Capital      bool
-	Walls        bool // level-up reward
-	Workshop     bool // level-up reward
-	BorderRadius int8 // grows with the border-growth reward
+	Pos          TileIdx  `json:"pos"`
+	Owner        PlayerID `json:"owner"`      // NoPlayer for an unclaimed village
+	Level        int8     `json:"level"`      // 1..max_city_level from the rules file
+	Population   int8     `json:"population"` // keeps growing at max_city_level, without further level-ups
+	Capital      bool     `json:"capital"`
+	Walls        bool     `json:"walls"`         // level-up reward
+	Workshop     bool     `json:"workshop"`      // level-up reward
+	BorderRadius int8     `json:"border_radius"` // grows with the border-growth reward
 	// PendingReward is the level whose reward has not been chosen yet, or 0
 	// if none. At most one reward is pending at a time, and it is never above
 	// max_city_level.
-	PendingReward int8
-	UnitCount     int8
+	PendingReward int8 `json:"pending_reward"`
+	UnitCount     int8 `json:"unit_count"`
 }
 
 // Player is one player's economy and research.
 type Player struct {
-	ID    PlayerID
-	Tribe Tribe
-	Stars int
-	Techs TechSet // bitset; must stay a value type (integer or fixed array), never a slice
-	Alive bool
+	ID    PlayerID `json:"id"`
+	Tribe Tribe    `json:"tribe"`
+	Stars int      `json:"stars"`
+	Techs TechSet  `json:"techs"` // bitset; must stay a value type (integer or fixed array), never a slice
+	Alive bool     `json:"alive"`
 	// NextUnitID is the ID this player's next trained unit gets. It starts at
 	// 1 and is independent of other players' counters; see UnitID.
-	NextUnitID UnitID
+	NextUnitID UnitID `json:"next_unit_id"`
 }
 
 // AllocUnitID returns a fresh ID for a unit owned by p and advances p's
