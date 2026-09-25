@@ -3,6 +3,7 @@ package rules
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,14 +20,19 @@ units:
   warrior: { cost: 2, hp: 10, attack: 2, defense: 2, move: 1, range: 1, tech: null, skills: [dash, fortify] }
   archer:  { cost: 3, hp: 10, attack: 2, defense: 1, move: 1, range: 2, tech: archery, skills: [dash, fortify] }
   knight:  { cost: 8, hp: 10, attack: 3.5, defense: 1, move: 3, range: 1, tech: chivalry, skills: [dash, persist, fortify] }
+  catapult: { cost: 8, hp: 10, attack: 4, defense: 0, move: 1, range: 3, tech: archery }
 techs:
   hunting:      { tier: 1, requires: null, unlocks: [harvest_game] }
   archery:      { tier: 2, requires: hunting, unlocks: [forest_defense] }
   riding:       { tier: 1 }
   free_spirit:  { tier: 2, requires: riding }
   chivalry:     { tier: 3, requires: free_spirit }
+tech_cost:
+  base: 4
+  per_tier_per_city: 1
 veterancy:
   kills_required: 3
+  hp_bonus: 5
 city:
   level_up_rewards:
     2: [workshop, explorer]
@@ -92,6 +98,15 @@ func TestParseValid(t *testing.T) {
 	wantCombat := Combat{Formula: FormulaCommunityV1, DamageScaleX10: 45, DefenseBonusX10: 15, WallBonusX10: 40}
 	if r.Combat != wantCombat {
 		t.Errorf("Combat = %+v, want %+v", r.Combat, wantCombat)
+	}
+	if c, _ := r.UnitKind("catapult"); r.Units[c].DefenseX10 != 0 || r.Units[c].Skills != 0 {
+		t.Errorf("catapult = %+v", r.Units[c])
+	}
+	if r.TechCost != (TechCost{Base: 4, PerTierPerCity: 1}) || r.TechCost.Cost(3, 2) != 10 {
+		t.Errorf("TechCost = %+v, Cost(3, 2) = %d", r.TechCost, r.TechCost.Cost(3, 2))
+	}
+	if r.Veterancy.HPBonusX10 != 50 {
+		t.Errorf("HPBonusX10 = %d, want 50", r.Veterancy.HPBonusX10)
 	}
 	if r.Veterancy.KillsRequired != 3 || r.City.MaxCityLevel != 4 {
 		t.Errorf("Veterancy %+v, MaxCityLevel %d", r.Veterancy, r.City.MaxCityLevel)
@@ -174,6 +189,26 @@ func TestRepoRulesFile(t *testing.T) {
 	}
 	if r.Combat.DamageScaleX10 != 45 || r.Combat.DefenseBonusX10 != 15 || r.Veterancy.KillsRequired != 3 {
 		t.Errorf("combat %+v, veterancy %+v", r.Combat, r.Veterancy)
+	}
+	if len(r.Units) != 7 || len(r.Techs) != 19 {
+		t.Errorf("%d units and %d techs, want 7 and 19", len(r.Units), len(r.Techs))
+	}
+	for _, name := range []string{"warrior", "rider", "archer", "defender", "swordsman", "catapult", "knight"} {
+		if _, ok := r.UnitKind(name); !ok {
+			t.Errorf("MVP unit %s missing", name)
+		}
+	}
+	for l := 2; l <= 4; l++ {
+		if len(r.City.LevelUpRewards[l]) != 2 {
+			t.Errorf("level %d rewards = %v, want two options", l, r.City.LevelUpRewards[l])
+		}
+	}
+	if !reflect.DeepEqual(r.City.MVPExcludedRewards, []state.CityReward{state.RewardExplorer}) {
+		t.Errorf("MVPExcludedRewards = %v, want [explorer]", r.City.MVPExcludedRewards)
+	}
+	// One city at the start of the game: tier 1 costs 5, tier 3 costs 7.
+	if c := r.TechCost; c.Cost(1, 1) != 5 || c.Cost(3, 1) != 7 {
+		t.Errorf("tech costs with one city: tier 1 %d, tier 3 %d", c.Cost(1, 1), c.Cost(3, 1))
 	}
 }
 
@@ -264,6 +299,10 @@ func TestParseRejects(t *testing.T) {
 		{"wrong tier", edit(t, "tier: 3, requires: free_spirit", "tier: 2, requires: free_spirit"), is(func(e *InvalidValueError) bool { return e.Path == "techs.chivalry.tier" })},
 		{"root not tier 1", edit(t, "riding:       { tier: 1 }", "riding:       { tier: 2 }"), is[*InvalidValueError](nil)},
 		{"duplicate unlock", edit(t, "unlocks: [forest_defense]", "unlocks: [forest_defense, forest_defense]"), is[*InvalidValueError](nil)},
+		{"missing tech_cost base", edit(t, "  base: 4\n", ""), is(func(e *InvalidValueError) bool { return e.Path == "tech_cost.base" })},
+		{"zero tech cost per tier", edit(t, "per_tier_per_city: 1", "per_tier_per_city: 0"), is[*InvalidValueError](nil)},
+		{"missing hp_bonus", edit(t, "  hp_bonus: 5\n", ""), is(func(e *InvalidValueError) bool { return e.Path == "veterancy.hp_bonus" })},
+		{"veteran hp overflows", edit(t, "hp_bonus: 5", "hp_bonus: 3270"), is(func(e *InvalidValueError) bool { return strings.HasSuffix(e.Path, ".hp") })},
 		{"zero kills_required", edit(t, "kills_required: 3", "kills_required: 0"), is[*InvalidValueError](nil)},
 		{"max_city_level too low", edit(t, "max_city_level: 4", "max_city_level: 1"), is[*InvalidValueError](nil)},
 		{"level above max", edit(t, "max_city_level: 4", "max_city_level: 3"), is(func(e *InvalidValueError) bool { return e.Path == "city.level_up_rewards.4" })},
@@ -341,5 +380,31 @@ func TestErrorMessages(t *testing.T) {
 	}
 	if got := fmt.Sprint(&TechCycleError{Cycle: []string{"a", "b"}}); got != "rules: tech tree cycle: a -> b -> a" {
 		t.Errorf("cycle message %q", got)
+	}
+}
+
+// TestRepoRulesFileMarksEveryValue enforces the rules file's convention that
+// every value line says whether it was observed in-game, still needs
+// verifying, or is an MVP design decision.
+func TestRepoRulesFileMarksEveryValue(t *testing.T) {
+	data, err := os.ReadFile("../../rules/v1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	markers := []string{"# confirmed", "# verify", "# design decision"}
+	for i, line := range strings.Split(string(data), "\n") {
+		content, _, _ := strings.Cut(line, "#")
+		key, value, found := strings.Cut(content, ":")
+		key = strings.TrimSpace(key)
+		if !found || strings.TrimSpace(value) == "" || key == "version" {
+			continue // blank, comment, section header, or the schema version
+		}
+		marked := false
+		for _, m := range markers {
+			marked = marked || strings.Contains(line, m)
+		}
+		if !marked {
+			t.Errorf("rules/v1.yaml:%d: %q has no # confirmed, # verify or # design decision comment", i+1, strings.TrimSpace(line))
+		}
 	}
 }

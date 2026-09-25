@@ -1,43 +1,83 @@
-# Pinned rules data. The engine reads every balance number from here, and
-# internal/rules rejects the file at startup if anything is unknown or
-# inconsistent. Values are written in game units (HP 10, damage scale 4.5);
-# the loader converts HP, attack, defense and combat constants to x10
-# integers.
+# Pinned rules data for Imperius on the pinned build. The engine reads every
+# balance number from here, and internal/rules rejects the file at startup if
+# anything is unknown or inconsistent. Values are written in game units (HP 10,
+# damage scale 4.5); the loader converts HP, attack, defense, the veteran HP
+# bonus and combat constants to x10 integers.
 #
-# Units and techs are seed data from the design doc: complete them and
-# verify them against the pinned build in #8.
+# Every value line ends with a status comment, enforced by
+# TestRepoRulesFileMarksEveryValue:
+#   # confirmed ...        observed in-game on the pinned build (see the ADR named)
+#   # verify ...           community-documented value, not yet observed in-game
+#   # design decision ...  an MVP scope choice, not a game value
+# To confirm a value, observe it on the pinned build, record the evidence in
+# an ADR or scenario, and change its comment to "# confirmed".
 version: v1
-game_build: "Android 2.17.3.16375"
+game_build: "Android 2.17.3.16375"  # confirmed: ADR 0001 recording
 
+# MVP units: Imperius land units only. Out of scope: naval units, the Giant
+# (level 5 super unit), the Cloak (Diplomacy), and the Mind Bender (its heal
+# and convert skills are outside the MVP skill vocabulary).
+# Skill vocabulary: dash, escape, fortify, persist. The catapult's "stiff"
+# (never retaliates) needs no skill: with 0 defense its retaliation is 0.
 units:
-  # warrior stats confirmed in ADR 0001; others verify on pinned build
-  warrior: { cost: 2, hp: 10, attack: 2, defense: 2, move: 1, range: 1, tech: null, skills: [dash, fortify] }
-  archer:  { cost: 3, hp: 10, attack: 2, defense: 1, move: 1, range: 2, tech: archery, skills: [dash, fortify] }  # verify on pinned build
-  # skill vocabulary for MVP: dash, escape, fortify, persist (semantics verify on pinned build)
+  warrior:   { cost: 2, hp: 10, attack: 2,   defense: 2, move: 1, range: 1, tech: null,        skills: [dash, fortify] }           # confirmed: hp, attack, defense (ADR 0001); verify: cost, move, range, skills
+  rider:     { cost: 3, hp: 10, attack: 2,   defense: 1, move: 2, range: 1, tech: riding,      skills: [dash, escape, fortify] }   # verify
+  archer:    { cost: 3, hp: 10, attack: 2,   defense: 1, move: 1, range: 2, tech: archery,     skills: [dash, fortify] }           # verify
+  defender:  { cost: 3, hp: 15, attack: 1,   defense: 3, move: 1, range: 1, tech: strategy,    skills: [fortify] }                 # verify
+  swordsman: { cost: 5, hp: 15, attack: 3,   defense: 3, move: 1, range: 1, tech: smithery,    skills: [dash] }                    # verify
+  catapult:  { cost: 8, hp: 10, attack: 4,   defense: 0, move: 1, range: 3, tech: mathematics, skills: [] }                    # verify
+  knight:    { cost: 8, hp: 10, attack: 3.5, defense: 1, move: 3, range: 1, tech: chivalry,    skills: [dash, persist, fortify] }  # verify
 
+# Tech tree for the MVP subset: the Climbing, Hunting, Organization and Riding
+# branches. Left out: the Fishing branch (Fishing, Sailing, Navigation,
+# Ramming, Aquatism), which is all naval, and Diplomacy, which unlocks only
+# diplomacy content. Units name their tech under units, so unlocks lists only
+# the other abilities and buildings a tech grants. Monuments are out of scope
+# and not listed.
 techs:
-  # tier is 1 for roots and parent tier + 1 otherwise; verify on pinned build
-  organization: { tier: 1, requires: null, unlocks: [harvest_fruit] }
-  hunting:      { tier: 1, requires: null, unlocks: [harvest_game] }
-  archery:      { tier: 2, requires: hunting, unlocks: [forest_defense] }
+  climbing:     { tier: 1, requires: null,         unlocks: [mountain_movement, mountain_defense] }  # verify
+  mining:       { tier: 2, requires: climbing,     unlocks: [mine] }                                 # verify
+  smithery:     { tier: 3, requires: mining,       unlocks: [forge] }                                # verify
+  meditation:   { tier: 2, requires: climbing,     unlocks: [mountain_temple] }                      # verify
+  philosophy:   { tier: 3, requires: meditation,   unlocks: [tech_discount] }                        # verify; discount (33%) not yet modeled
+  hunting:      { tier: 1, requires: null,         unlocks: [harvest_game] }                         # verify
+  archery:      { tier: 2, requires: hunting,      unlocks: [forest_defense] }                       # verify
+  spiritualism: { tier: 3, requires: archery,      unlocks: [forest_temple, grow_forest] }           # verify
+  forestry:     { tier: 2, requires: hunting,      unlocks: [lumber_hut, clear_forest] }             # verify
+  mathematics:  { tier: 3, requires: forestry,     unlocks: [sawmill] }                              # verify
+  organization: { tier: 1, requires: null,         unlocks: [harvest_fruit] }                        # verify
+  farming:      { tier: 2, requires: organization, unlocks: [farm] }                                 # verify
+  construction: { tier: 3, requires: farming,      unlocks: [windmill, burn_forest] }                # verify
+  strategy:     { tier: 2, requires: organization, unlocks: [] }                                     # verify
+  riding:       { tier: 1, requires: null,         unlocks: [] }                                     # verify
+  roads:        { tier: 2, requires: riding,       unlocks: [road, bridge] }                         # verify
+  trade:        { tier: 3, requires: roads,        unlocks: [market] }                               # verify
+  free_spirit:  { tier: 2, requires: riding,       unlocks: [temple, disband] }                      # verify
+  chivalry:     { tier: 3, requires: free_spirit,  unlocks: [destroy] }                              # verify
+
+# A tech costs base + tier x per_tier_per_city x (cities owned).
+tech_cost:
+  base: 4               # verify
+  per_tier_per_city: 1  # verify
 
 veterancy:
-  kills_required: 3  # confirmed in ADR 0001
+  kills_required: 3  # confirmed: ADR 0001 ("Warrior (1/3 kills)")
+  hp_bonus: 5        # verify
 
 city:
-  level_up_rewards:  # options per level: verify on pinned build
-    2: [workshop, explorer]
-    3: [city_wall, resources]
-    4: [population_growth, border_growth]
-  mvp_excluded_rewards: [explorer]  # moves randomly; chance nodes are a v2 option
-  max_city_level: 4  # MVP cap; level 5+ rewards (park, super unit: verify on pinned build) are out of scope
+  level_up_rewards:
+    2: [workshop, explorer]               # verify
+    3: [city_wall, resources]             # verify
+    4: [population_growth, border_growth] # verify
+  mvp_excluded_rewards: [explorer]  # design decision: explorer moves randomly; chance nodes are a v2 option
+  max_city_level: 4                 # design decision: MVP cap; level 5+ rewards (park, super unit) are out of scope
 
-unused_in_mvp:  # naval is out of scope
-  buildings: [port]
-  resources: [fish]
+unused_in_mvp:  # design decision: naval is out of scope
+  buildings: [port]  # design decision
+  resources: [fish]  # design decision
 
 combat:
-  formula: community_v1  # confirmed in ADR 0001
-  damage_scale: 4.5      # confirmed in ADR 0001
-  defense_bonus: 1.5     # city without walls; confirmed in ADR 0001
-  wall_bonus: 4          # verify on pinned build
+  formula: community_v1  # confirmed: ADR 0001, 5 of 5 observed attacks
+  damage_scale: 4.5      # confirmed: ADR 0001
+  defense_bonus: 1.5     # confirmed for a city without walls (ADR 0001); verify: forest and mountain bonuses
+  wall_bonus: 4          # verify

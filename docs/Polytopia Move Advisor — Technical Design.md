@@ -170,8 +170,12 @@ units:
 techs:
   organization: { tier: 1, requires: null, unlocks: [harvest_fruit] }
   # ...
+tech_cost:  # a tech costs base + tier x per_tier_per_city x cities owned
+  base: 4
+  per_tier_per_city: 1
 veterancy:
-  kills_required: 3  # verify on pinned build
+  kills_required: 3
+  hp_bonus: 5  # max HP gained on promotion
 city:
   level_up_rewards:  # options per level: verify on pinned build
     2: [workshop, explorer]

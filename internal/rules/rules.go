@@ -16,8 +16,9 @@ type Rules struct {
 	// Units is indexed by state.UnitKind and Techs by state.TechID. Both are
 	// sorted by name, so indexes depend only on the set of names, not on
 	// their order in the file.
-	Units []Unit
-	Techs []Tech
+	Units    []Unit
+	Techs    []Tech
+	TechCost TechCost
 
 	Veterancy   Veterancy
 	City        City
@@ -52,9 +53,22 @@ type Tech struct {
 	Unlocks  []string     // abilities the tech unlocks, as named in the rules file
 }
 
-// Veterancy holds the veteran promotion threshold.
+// TechCost is the tech price formula: Base + tier x PerTierPerCity x cities.
+type TechCost struct {
+	Base           int
+	PerTierPerCity int
+}
+
+// Cost returns the star cost of a tech of the given tier for a player who
+// owns cities cities.
+func (c TechCost) Cost(tier, cities int) int {
+	return c.Base + tier*c.PerTierPerCity*cities
+}
+
+// Veterancy holds the veteran promotion rules.
 type Veterancy struct {
 	KillsRequired int
+	HPBonusX10    int16 // added to a unit's max HP when it becomes a veteran
 }
 
 // City holds city leveling rules.

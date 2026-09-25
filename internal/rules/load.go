@@ -124,7 +124,9 @@ func (v *validator) build(f *fileYAML) *Rules {
 	}
 	v.buildTechs(r, f.Techs)
 	v.buildUnits(r, f.Units)
+	v.buildTechCost(r, f.TechCost)
 	v.buildVeterancy(r, f.Veterancy)
+	v.checkVeteranHP(r)
 	v.buildCity(r, f.City)
 	v.buildUnused(r, f.UnusedInMVP)
 	v.buildCombat(r, f.Combat)
@@ -257,7 +259,7 @@ func (v *validator) buildUnits(r *Rules, units map[string]unitYAML) {
 			Name:       name,
 			Cost:       u.Cost,
 			AttackX10:  v.x10(path+".attack", u.Attack, 0),
-			DefenseX10: v.x10(path+".defense", u.Defense, 1),
+			DefenseX10: v.x10(path+".defense", u.Defense, 0), // catapults have 0 defense
 			Move:       u.Move,
 			Range:      u.Range,
 			Tech:       NoTech,
@@ -317,11 +319,37 @@ func (v *validator) x10(path string, d decimal, minX10 int) int {
 	return n
 }
 
+func (v *validator) buildTechCost(r *Rules, c techCostYAML) {
+	if c.Base == nil {
+		v.invalid("tech_cost.base", "", "is required")
+	} else {
+		r.TechCost.Base = *c.Base
+		if *c.Base < 0 {
+			v.invalid("tech_cost.base", *c.Base, "must not be negative")
+		}
+	}
+	r.TechCost.PerTierPerCity = c.PerTierPerCity
+	if c.PerTierPerCity < 1 {
+		v.invalid("tech_cost.per_tier_per_city", c.PerTierPerCity, "must be at least 1")
+	}
+}
+
 func (v *validator) buildVeterancy(r *Rules, vet veterancyYAML) {
 	r.Veterancy.KillsRequired = vet.KillsRequired
+	bonus := v.x10("veterancy.hp_bonus", vet.HPBonus, 0)
+	r.Veterancy.HPBonusX10 = int16(min(bonus, math.MaxInt16))
 	// state.Unit.Kills is an int8.
 	if vet.KillsRequired < 1 || vet.KillsRequired > math.MaxInt8 {
 		v.invalid("veterancy.kills_required", vet.KillsRequired, fmt.Sprintf("must be between 1 and %d", math.MaxInt8))
+	}
+}
+
+// checkVeteranHP makes sure a veteran's max HP still fits state.Unit.HP.
+func (v *validator) checkVeteranHP(r *Rules) {
+	for _, u := range r.Units {
+		if int(u.HPx10)+int(r.Veterancy.HPBonusX10) > math.MaxInt16 {
+			v.invalid("units."+u.Name+".hp", u.HPx10/10, "plus veterancy.hp_bonus is too large")
+		}
 	}
 }
 

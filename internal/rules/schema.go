@@ -15,6 +15,7 @@ type fileYAML struct {
 	GameBuild   string              `yaml:"game_build"`
 	Units       map[string]unitYAML `yaml:"units"`
 	Techs       map[string]techYAML `yaml:"techs"`
+	TechCost    techCostYAML        `yaml:"tech_cost"`
 	Veterancy   veterancyYAML       `yaml:"veterancy"`
 	City        cityYAML            `yaml:"city"`
 	UnusedInMVP unusedYAML          `yaml:"unused_in_mvp"`
@@ -38,8 +39,14 @@ type techYAML struct {
 	Unlocks  []string `yaml:"unlocks"`
 }
 
+type techCostYAML struct {
+	Base           *int `yaml:"base"`
+	PerTierPerCity int  `yaml:"per_tier_per_city"`
+}
+
 type veterancyYAML struct {
-	KillsRequired int `yaml:"kills_required"`
+	KillsRequired int     `yaml:"kills_required"`
+	HPBonus       decimal `yaml:"hp_bonus"`
 }
 
 type cityYAML struct {
