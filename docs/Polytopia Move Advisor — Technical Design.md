@@ -184,11 +184,13 @@ unused_in_mvp:  # naval is out of scope
   resources: [fish]
 combat:
   formula: community_v1
-  # integer x10 constants so combat stays in integer HP x10; all values verify on pinned build
-  damage_scale_x10: 45
-  defense_bonus_x10: 15
-  wall_bonus_x10: 40
+  # written in game units; the loader converts them, and unit hp, attack and defense, to x10 integers
+  damage_scale: 4.5
+  defense_bonus: 1.5
+  wall_bonus: 4  # verify on pinned build
 ```
+
+The loader (`internal/rules`) decodes strictly and rejects the file at startup with typed errors for unknown fields, unknown skills, unknown techs in `tech` or `requires`, tech tree cycles or inconsistent tiers, rewards outside the vocabulary, levels without an MVP-allowed reward, values with more than one decimal place, and a missing or placeholder `game_build`. Units and techs are indexed by sorted name, so `state.UnitKind` and `state.TechID` don't depend on file order.
 
 **Pinning the game build.** The build number must be read from the game, so it stays a placeholder until Phase 1 starts. Procedure:
 
